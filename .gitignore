@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# C extensions
+*.so
+
+# Virtual environments
+.env
+.venv
+
+# OS
+.DS_Store
