@@ -9,6 +9,10 @@ wheels/
 # C extensions
 *.so
 
+# uv
+.python-version
+uv.lock
+
 # Virtual environments
 .env
 .venv

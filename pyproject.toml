@@ -1,0 +1,23 @@
+[project]
+name = "mcp-pyzotero"
+version = "0.1.0"
+description = "A Model Control Protocol (MCP) connector for integrating your local Zotero with Claude"
+readme = "README.md"
+authors = [
+{ name = "Samuel Gyger", email = "samuel@gyger.tech" }
+]
+requires-python = ">= 3.10"
+dependencies = [
+    "mcp[cli]>=1.2.0",
+    "pyzotero>=1.6.3",
+]
+classifiers = [
+"Development Status :: 3 - Alpha",
+"License :: OSI Approved :: MIT License",
+"Programming Language :: Python :: 3",
+]
+
+[project.urls]
+Homepage = "https://github.com/gyger/mcp-pyzotero"
+Repository = "https://github.com/gyger/mcp-pyzotero"
+Issues = "https://github.com/gyger/mcp-pyzotero/issues"
