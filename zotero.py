@@ -3,11 +3,13 @@ from typing import Optional, List, Dict, Any
 
 import os
 import json
+import base64
 
 from pyzotero import zotero
+
 from mcp.server.fastmcp import FastMCP, Context
 
-mcp = FastMCP("Zotero", dependencies=["pyzotero", 
+mcp = FastMCP("Zotero", dependencies=["pyzotero",
                                       "mcp[cli]"])
 
 class ZoteroWrapper(zotero.Zotero):
@@ -63,19 +65,20 @@ class ZoteroWrapper(zotero.Zotero):
             
         return formatted
 
-@mcp.tool()
-def get_collections(*, ctx: Context) -> str:
+@mcp.resource("zotero://collections")
+def get_collections() -> str:
     """List all collections in your Zotero library"""
     try:
         client = ZoteroWrapper()
         collections = client.collections()
         return json.dumps(collections, indent=2)
     except Exception as e:
-        ctx.error(f"Failed to fetch collections. Message: {str(e)}")
-        return
+        return json.dumps({
+            "error": f"Failed to fetch collections: {str(e)}"
+        }, indent=2)
 
-@mcp.tool()
-def get_collection_items(collection_key: str, *, ctx: Context) -> str:
+@mcp.resource("zotero://collections/{collection_key}/items")
+def get_collection_items(collection_key: str) -> str:
     """
     Get all items in a specific collection
     
@@ -95,11 +98,13 @@ def get_collection_items(collection_key: str, *, ctx: Context) -> str:
         formatted_items = [client.format_item(item) for item in items]
         return json.dumps(formatted_items, indent=2)
     except Exception as e:
-        ctx.error(f"Failed to fetch collection items {collection_key}. Message: {str(e)}")
-        return
+        return json.dumps({
+            "error": f"Failed to fetch collection items: {str(e)}",
+            "collection_key": collection_key
+        }, indent=2)
 
-@mcp.tool()
-def get_item_details(item_key: str, *, ctx: Context) -> str:
+@mcp.resource("zotero://items/{item_key}")
+def get_item_details(item_key: str) -> str:
     """
     Get detailed information about a specific paper
     
@@ -119,10 +124,89 @@ def get_item_details(item_key: str, *, ctx: Context) -> str:
         formatted_item = client.format_item(item, include_abstract=True)
         return json.dumps(formatted_item, indent=2)
     except Exception as e:
-        ctx.error(f"Failed to fetch item details {item_key}. Message: {str(e)}")
-        return
+        return json.dumps({
+            "error": f"Failed to fetch item details: {str(e)}",
+            "item_key": item_key
+        }, indent=2)
 
-@mcp.tool()
+@mcp.resource("zotero://items/{item_key}/pdf", mime_type="application/pdf")
+def get_item_pdf(item_key: str) -> bytes:
+    """
+    Get the PDF contents of a specific paper if available
+    
+    Args:
+        item_key: The paper's item key/ID
+    """
+    try:
+        client = ZoteroWrapper()
+        pdf_content = client.file(item_key)
+        if not pdf_content:
+            return json.dumps({
+                    "error": "No PDF found",
+                    "item_key": item_key,
+                    "suggestion": "Check if this item has an attached PDF"
+            }, indent=2)
+               
+        return pdf_content
+
+    except Exception as e:
+        return json.dumps({
+            "error": f"Failed to fetch PDF: {str(e)}",
+            "item_key": item_key
+        }, indent=2)
+
+@mcp.resource("zotero://tags")
+def get_tags() -> str:
+    """Return all tags in the Zotero library"""
+    try:
+        client = ZoteroWrapper()
+        items = client.tags()
+        if not items:
+            return json.dumps({
+                "error": "No tags found",
+                "suggestion": "You need to create tags in your library"
+            }, indent=2)
+        
+        return json.dumps(items, indent=2)
+    except Exception as e:
+        # Since resources don't have access to Context object, 
+        # we'll return the error as part of the response
+        return json.dumps({
+            "error": f"Listing tags failed: {str(e)}"
+        }, indent=2)
+
+@mcp.resource("zotero://recent/items/{limit}")
+def get_recent_items(limit = "10") -> str:
+    """Get recently added papers to your library
+    
+    Args:
+        limit: Number of papers to return (default 10, max 100)
+    """
+    try:
+        client = ZoteroWrapper()
+        # Convert string limit to int and apply constraints
+        limit_int = min(int(limit or 10), 100)
+        
+        items = client.items(limit=limit_int, sort='dateAdded', direction='desc')
+        if not items:
+            return json.dumps({
+                "error": "No recent items found",
+                "suggestion": "Add some items to your Zotero library first"
+            }, indent=2)
+            
+        formatted_items = [client.format_item(item, include_abstract=False) for item in items]
+        return json.dumps(formatted_items, indent=2)
+    except ValueError:
+        return json.dumps({
+            "error": "Invalid limit parameter",
+            "suggestion": "Please provide a valid number for limit"
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "error": f"Failed to fetch recent items: {str(e)}"
+        }, indent=2)
+
+@mcp.tool(description="Search the local Zotero library of the user.")
 def search_library(query: str, *, ctx: Context) -> str:
     """
     Search your entire Zotero library
@@ -151,28 +235,6 @@ def search_library(query: str, *, ctx: Context) -> str:
         ctx.error(f"Search failed ({query}). Message: {str(e)}")
         return
 
-@mcp.tool()
-def get_recent(limit: Optional[int] = 10, *, ctx: Context) -> str:
-    """
-    Get recently added papers to your library
-    
-    Args:
-        limit: Number of papers to return (default 10)
-    """   
-    try:
-        client = ZoteroWrapper()
-        items = client.items(limit=min(limit or 10, 100), sort='dateAdded', direction='desc')
-        if not items:
-            return json.dumps({
-                "error": "No recent items found",
-                "suggestion": "Add some items to your Zotero library first"
-            }, indent=2)
-            
-        formatted_items = [client.format_item(item, include_abstract=False) for item in items]
-        return json.dumps(formatted_items, indent=2)
-    except Exception as e:
-        ctx.error(f"Failed to fetch recent items. Message: {str(e)}")
-        return
 
 if __name__ == "__main__":
     # Initialize and run the server
