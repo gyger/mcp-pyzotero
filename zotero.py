@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 
 import os
 import json
@@ -77,11 +77,16 @@ class ZoteroWrapper(zotero.Zotero):
         return self._build_query(query_string, no_params=True)
 
 @mcp.tool(description="List all collections in the local Zotero library.")
-def get_collections(*, ctx: Context) -> str:
-    """List all collections in the local Zotero library"""
+def get_collections(limit: Optional[int] = None, *, ctx: Context) -> str:
+    """List all collections in the local Zotero library
+    
+    Args:
+        limit: Optional how many items to return.
+    """
     try:
         client = ZoteroWrapper()
-        collections = client.collections()
+        collections = client.collections(limit=limit)
+
         return json.dumps(collections, indent=2)
     except Exception as e:
         if ctx._fastmcp:
@@ -91,16 +96,17 @@ def get_collections(*, ctx: Context) -> str:
         }, indent=2)
 
 @mcp.tool(description="Gets all items in a specific Zotero collection.")
-def get_collection_items(collection_key: str, *, ctx: Context) -> str:
+def get_collection_items(collection_key: str, limit: Optional[int] = None, *, ctx: Context) -> str:
     """
     Gets all items in a specific Zotero collection
     
     Args:
         collection_key: The collection key/ID
+        limit: Optional how many items to return.
     """
     try:
         client = ZoteroWrapper()
-        items = client.collection_items(collection_key)
+        items = client.collection_items(collection_key, limit=limit)
         if not items:
             return json.dumps({
                 "error": "Collection is empty",
@@ -253,11 +259,11 @@ def get_item_pdf(item_key: str, attachment_index: int = 0, *, ctx: Context) -> E
         }, indent=2)
     
 @mcp.tool(description="Get tags used in the Zotero library")
-def get_tags(*, ctx: Context) -> str:
+def get_tags(limit: Optional[int] = None, *, ctx: Context) -> str:
     """Return all tags used in the Zotero library"""
     try:
         client = ZoteroWrapper()
-        items = client.tags()
+        items = client.tags(limit=limit)
         if not items:
             return json.dumps({
                 "error": "No tags found",
@@ -277,7 +283,7 @@ def get_recent(limit: Optional[int] = 10, *, ctx: Context) -> str:
     """Get recently added items (e.g. papers or attachements) to your library
     
     Args:
-        limit: Number of items to return (default 10, max 100)
+        limit: Number of items to return (default 10)
     """
     try:
         client = ZoteroWrapper()
@@ -306,12 +312,19 @@ def get_recent(limit: Optional[int] = 10, *, ctx: Context) -> str:
         }, indent=2)
 
 @mcp.tool(description="Search the local Zotero library of the user.")
-def search_library(query: str, *, ctx: Context) -> str:
+def search_library(query: str, 
+                   qmode: Literal["everything"] | Literal["titleCreatorYear"] = 'titleCreatorYear' ,
+                   itemType: str = '-attachment',
+                   limit: Optional[int] = None,
+                   *, ctx: Context) -> str:
     """
     Search your entire Zotero library
     
     Args:
         query: Search query
+        qmode: Query mode (`titleCreatorYear` or `everything` (default))
+        itemType: Configuration on items to search, (default no attachements).
+        limit: How many items to return (default unlimited)
     """
     if not query.strip():
         return json.dumps({
@@ -320,8 +333,8 @@ def search_library(query: str, *, ctx: Context) -> str:
         
     try:
         client = ZoteroWrapper()
-        items = client.items(q=query)
-        if not items:
+        items = client.items(q=query, qmode=qmode, itemType=itemType, limit=limit)
+        if len(items) < 1:
             return json.dumps({
                 "error": "No results found",
                 "query": query,
