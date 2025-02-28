@@ -7,6 +7,8 @@ It depends on the ability to access a local web-api in Zotero 7.
 This was inspired by a repository using Node.js and the web api: [mcp-zotero](https://github.com/kaliaboi/mcp-zotero).  
 This builds on the shoulders of the fantastic [pyzotero](https://github.com/urschrei/pyzotero) library.
 
+<a href="https://glama.ai/mcp/servers/q5adqkd02d"><img width="380" height="200" src="https://glama.ai/mcp/servers/q5adqkd02d/badge" alt="Zotero Connector MCP server" /></a>
+
 ## Installation
 
 Information about Claude Desktop interacting with MCPs can be found [here](https://modelcontextprotocol.io/quickstart/user).
