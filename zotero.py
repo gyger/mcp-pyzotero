@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Optional, List, Dict, Any, Literal
+from pydantic import Field
 
 import os
 import json
@@ -17,6 +18,7 @@ mcp = FastMCP("Zotero", dependencies=["pyzotero",
 
 class ZoteroWrapper(zotero.Zotero):
     """Wrapper for pyzotero client with error handling"""
+    
     def __init__(self):
         try:
             user_id = os.getenv('ZOTERO_USER_ID')
@@ -24,12 +26,13 @@ class ZoteroWrapper(zotero.Zotero):
                 user_id = 0
             super().__init__(1, 'user', '', local=True) #FIXME: Work around a bug #202 in pyzotero.
             self.library_id = user_id
+
         except Exception as e:
             return json.dumps({
                 "error": "Failed to initialize Zotero connection.",
                 "message": str(e)
             }, indent=2)
-    
+
     def format_creators(self, creators: List[Dict[str, str]]) -> str:
         """Format creator names into a string"""
         names = []
@@ -76,27 +79,34 @@ class ZoteroWrapper(zotero.Zotero):
         )
         return self._build_query(query_string, no_params=True)
 
+_zotero_client = None
+def _get_zotero_client() -> ZoteroWrapper:
+    global _zotero_client
+    if _zotero_client is None:
+        _zotero_client = ZoteroWrapper()
+    return _zotero_client
+
 @mcp.tool(description="List all collections in the local Zotero library.")
-def get_collections(limit: Optional[int] = None, *, ctx: Context) -> str:
+def get_collections(limit: Optional[int] = None, context: Optional[Context] = None) -> str:
     """List all collections in the local Zotero library
     
     Args:
         limit: Optional how many items to return.
     """
     try:
-        client = ZoteroWrapper()
+        client = _get_zotero_client()
         collections = client.collections(limit=limit)
 
         return json.dumps(collections, indent=2)
     except Exception as e:
-        if ctx._fastmcp:
-            ctx.error(f"Failed to fetch collections. Message: {str(e)}")
+        if hasattr(context, '_fastmcp'):
+            context.error(f"Failed to fetch collections. Message: {str(e)}")
         return json.dumps({
                 "error": f"Failed to fetch collections. Message: {str(e)}"
         }, indent=2)
 
 @mcp.tool(description="Gets all items in a specific Zotero collection.")
-def get_collection_items(collection_key: str, limit: Optional[int] = None, *, ctx: Context) -> str:
+def get_collection_items(collection_key: str, limit: Optional[int] = None, context: Optional[Context] = None) -> str:
     """
     Gets all items in a specific Zotero collection
     
@@ -105,7 +115,7 @@ def get_collection_items(collection_key: str, limit: Optional[int] = None, *, ct
         limit: Optional how many items to return.
     """
     try:
-        client = ZoteroWrapper()
+        client = _get_zotero_client()
         items = client.collection_items(collection_key, limit=limit)
         if not items:
             return json.dumps({
@@ -117,15 +127,15 @@ def get_collection_items(collection_key: str, limit: Optional[int] = None, *, ct
         formatted_items = [client.format_item(item) for item in items]
         return json.dumps(formatted_items, indent=2)
     except Exception as e:
-        if ctx._fastmcp:
-            ctx.error(f"Failed to fetch collection items {collection_key}. Message: {str(e)}")
+        if hasattr(context, '_fastmcp'):
+            context.error(f"Failed to fetch collection items {collection_key}. Message: {str(e)}")
         return json.dumps({
                 "error": f"Failed to fetch collection items. Message: {str(e)}",
                 "collection_key": collection_key,
         }, indent=2)
 
 @mcp.tool(description="Get detailed information about a specific item in the library")
-def get_item_details(item_key: str, *, ctx: Context) -> str:
+def get_item_details(item_key: str, context: Optional[Context] = None) -> str:
     """
     Get detailed information about a specific item in the library
     
@@ -133,7 +143,7 @@ def get_item_details(item_key: str, *, ctx: Context) -> str:
         item_key: The paper's item key/ID
     """
     try:
-        client = ZoteroWrapper()
+        client = _get_zotero_client()
         item = client.item(item_key)
         if not item:
             return json.dumps({
@@ -145,16 +155,16 @@ def get_item_details(item_key: str, *, ctx: Context) -> str:
         formatted_item = client.format_item(item, include_abstract=True)
         return json.dumps(formatted_item, indent=2)
     except Exception as e:
-        if ctx._fastmcp:
-            ctx.error(f"Failed to fetch item details {item_key}. Message: {str(e)}")
+        if hasattr(context, '_fastmcp'):
+            context.error(f"Failed to fetch item details {item_key}. Message: {str(e)}")
         return json.dumps({
                 "error": f"Failed to fetch item details. Message: {str(e)}",
                 "item_key": item_key,
         }, indent=2)
 
-# FIXME: Misses local api endpoint in Zotero.
+# Blocked by zotero release 7.1 (fulltext)
 # @mcp.tool(description="Get fulltext as indexed by Zotero")
-def get_item_fulltext(item_key: str, *, ctx: Context) -> str:
+def get_item_fulltext(item_key: str, context: Optional[Context] = None) -> str:
     """
     Gets the full text content as indexed by Zotero.
     There can be no fulltext.
@@ -163,7 +173,7 @@ def get_item_fulltext(item_key: str, *, ctx: Context) -> str:
         item_key: The paper's item key/ID
     """
     try:
-        client = ZoteroWrapper()
+        client = _get_zotero_client()
         fulltext = client.fulltext_item(item_key)
         if not fulltext:
             return json.dumps({
@@ -173,8 +183,8 @@ def get_item_fulltext(item_key: str, *, ctx: Context) -> str:
         
         return json.dumps(fulltext, indent=2)
     except Exception as e:
-        if ctx._fastmcp:
-            ctx.error(f"Retrieving fulltext failed. Message: {str(e)}")
+        if hasattr(context, '_fastmcp'):
+            context.error(f"Retrieving fulltext failed. Message: {str(e)}")
         return json.dumps({
                 "error": f"Retrieving fulltext failed. Message: {str(e)}",
                 "item_key": item_key,
@@ -182,7 +192,9 @@ def get_item_fulltext(item_key: str, *, ctx: Context) -> str:
 
 # FIXME: Misses way to provide PDF to Claude
 # @mcp.tool(description="Retrieve PDF for item in the library")
-def get_item_pdf(item_key: str, attachment_index: int = 0, *, ctx: Context) -> EmbeddedResource | str:
+def get_item_pdf(item_key: str, 
+                 attachment_index: int = Field(default=0), 
+                 context: Optional[Context] = None) -> EmbeddedResource | str:
     """
     Get the PDF content for a specific paper.
     This returns the first PDF that is an attachement by default.
@@ -192,7 +204,7 @@ def get_item_pdf(item_key: str, attachment_index: int = 0, *, ctx: Context) -> E
         attachement_index: Look at attachement with index (Default 0)
     """
     try:
-        client = ZoteroWrapper()
+        client = _get_zotero_client()
         children = client.children(item_key)
         pdf_attachments = [
             {
@@ -241,8 +253,8 @@ def get_item_pdf(item_key: str, attachment_index: int = 0, *, ctx: Context) -> E
                 }, indent=2)
             
         except FileNotFoundError:
-            if ctx._fastmcp:
-                ctx.error(f"PDF file not found at {pdf_path} for item {item_key}")
+            if hasattr(context, '_fastmcp'):
+                context.error(f"PDF file not found at {pdf_path} for item {item_key}")
             return json.dumps({
                     "error": "PDF file not found",
                     "item_key": item_key,
@@ -251,18 +263,22 @@ def get_item_pdf(item_key: str, attachment_index: int = 0, *, ctx: Context) -> E
             }, indent=2)
         
     except Exception as e:
-        if ctx._fastmcp:
-            ctx.error(f"Failed to fetch PDF: {str(e)}")
+        if hasattr(context, '_fastmcp'):
+            context.error(f"Failed to fetch PDF: {str(e)}")
         return json.dumps({
                 "error": f"Failed to fetch PDF. {str(e)}",
                 "item_key": item_key,
         }, indent=2)
     
 @mcp.tool(description="Get tags used in the Zotero library")
-def get_tags(limit: Optional[int] = None, *, ctx: Context) -> str:
-    """Return all tags used in the Zotero library"""
+def get_tags(limit: Optional[int] = None, context: Optional[Context] = None) -> str:
+    """Return tags used in the Zotero library.
+
+        Args:
+        limit: Optionally limit how many tags to return.
+    """
     try:
-        client = ZoteroWrapper()
+        client = _get_zotero_client()
         items = client.tags(limit=limit)
         if not items:
             return json.dumps({
@@ -272,25 +288,33 @@ def get_tags(limit: Optional[int] = None, *, ctx: Context) -> str:
         
         return json.dumps(items, indent=2)
     except Exception as e:
-        if ctx._fastmcp:
-            ctx.error(f"Retrieving tags failed. Message: {str(e)}")
+        if hasattr(context, '_fastmcp'):
+            context.error(f"Retrieving tags failed. Message: {str(e)}")
         return json.dumps({
                 "error": f"Retrieving tags failed. Message: {str(e)}"
         }, indent=2)
 
-@mcp.tool(description="Get recently added items (e.g. papers or attachements) to your library")
-def get_recent(limit: Optional[int] = 10, *, ctx: Context) -> str:
-    """Get recently added items (e.g. papers or attachements) to your library
+@mcp.tool(description="Get recently added items to your library")
+def get_recent(limit: Optional[int] = Field(default=10), 
+               itemType: str = Field(default='-attachment', 
+                                     description='Define item types to include, by default excludes attachments'), 
+               context: Optional[Context] = None) -> str:
+    """Get recently added items (this by default excludes attachements) to your library
     
     Args:
-        limit: Number of items to return (default 10)
+        limit: Number of items to return (default: 10)
+        itemType: Define item types to include, by default excludes attachments (default: -attachment)
     """
     try:
-        client = ZoteroWrapper()
+        client = _get_zotero_client()
         # Convert string limit to int and apply constraints
         limit_int = min(int(limit or 10), 100)
         
-        items = client.items(limit=limit_int, sort='dateAdded', direction='desc')
+        items = client.items(limit=limit_int,
+                             itemType=itemType,
+                             sort='dateAdded', 
+                             direction='desc',
+                             )
         if not items:
             return json.dumps({
                 "error": "No recent items found",
@@ -305,20 +329,21 @@ def get_recent(limit: Optional[int] = 10, *, ctx: Context) -> str:
             "suggestion": "Please provide a valid number for limit"
         }, indent=2)
     except Exception as e:
-        if ctx._fastmcp:
-            ctx.error(f"Failed to fetch recent items: {str(e)}")
+        if hasattr(context, '_fastmcp'):
+            context.error(f"Failed to fetch recent items: {str(e)}")
         return json.dumps({
                 "error": f"Failed to fetch recent items: {str(e)}"
         }, indent=2)
 
-@mcp.tool(description="Search the local Zotero library of the user.")
+@mcp.tool(description="Search the Zotero library for an item.")
 def search_library(query: str, 
-                   qmode: Literal["everything"] | Literal["titleCreatorYear"] = 'titleCreatorYear' ,
+                   qmode: Literal["everything"] | Literal["titleCreatorYear"] = Field(default='titleCreatorYear', 
+                                                                                      description='Use all field and full text search (`everything`), or only Title, Creator and Year search (`titleCreatorYear`)') ,
                    itemType: str = '-attachment',
                    limit: Optional[int] = None,
-                   *, ctx: Context) -> str:
+                   context: Optional[Context] = None) -> str:
     """
-    Search your entire Zotero library
+    Search the Zotero library for an item.
     
     Args:
         query: Search query
@@ -332,7 +357,7 @@ def search_library(query: str,
         }, indent=2)
         
     try:
-        client = ZoteroWrapper()
+        client = _get_zotero_client()
         items = client.items(q=query, qmode=qmode, itemType=itemType, limit=limit)
         if len(items) < 1:
             return json.dumps({
@@ -344,13 +369,17 @@ def search_library(query: str,
         formatted_items = [client.format_item(item, include_abstract=False) for item in items]
         return json.dumps(formatted_items, indent=2)
     except Exception as e:
-        if ctx._fastmcp:
-            ctx.error(f"Search failed ({query}). Message: {str(e)}")
+        if hasattr(context, '_fastmcp'):
+            context.error(f"Search failed ({query}). Message: {str(e)}")
         return json.dumps({
                 "error": f"Search failed. Message: {str(e)}",
                 "query": query,
         }, indent=2)
 
 if __name__ == "__main__":
+    # Talk with Zotero once
+    client = _get_zotero_client()
+    client.creator_fields()
+    
     # Initialize and run the server
     mcp.run(transport='stdio')
