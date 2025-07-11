@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/gyger-mcp-pyzotero-badge.png)](https://mseep.ai/app/gyger-mcp-pyzotero)
+
 # Zotero MCP Connector
 
 A Model Control Protocol (MCP) connector for integrating your local Zotero with Claude.  
