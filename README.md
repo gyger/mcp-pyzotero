@@ -9,7 +9,7 @@ This builds on the shoulders of the fantastic [pyzotero](https://github.com/ursc
 
 ## Installation
 
-### Run from local code
+### Run from local code (Recommended)
 Information about Claude Desktop interacting with MCPs can be found [here](https://modelcontextprotocol.io/quickstart/user).
 
 1. Use `uv`. Installation instructions can be found [here](https://docs.astral.sh/uv/getting-started/installation/).
@@ -29,13 +29,14 @@ uv sync
 uv run mcp install zotero.py
 ```
 
-### Run encapsulated with uvx
+### Run encapsulated with uvx (Should work)
 Edit the configuration for your Claude Desktop softare in the file.
 
     - macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
     - Windows: %APPDATA%\Claude\claude_desktop_config.json
 
 and add the Zotero entry
+```json
 {
     "mcpServers": {
         "Zotero": {
@@ -48,6 +49,7 @@ and add the Zotero entry
         }
     }
 }
+```
 
 ## Configuration
 
