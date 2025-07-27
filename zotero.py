@@ -2,12 +2,13 @@ from typing import Annotated, Optional, Any, Literal
 from pydantic import Field
 
 import os
+import re
 import json
 import base64
 import pathlib
 import urllib
-import httpx
 
+import httpx
 from pyzotero import zotero
 
 from mcp.server.fastmcp import FastMCP, Context
@@ -93,6 +94,45 @@ class ZoteroWrapper(zotero.Zotero):
         except (httpx.RequestError, httpx.TimeoutException, json.JSONDecodeError):
             return False
 
+    def format_item(self, item: dict[str, Any], 
+                    include_abstract: bool = True) -> dict[str, Any]:
+        """Format a Zotero item into a standardized dictionary"""
+        data = item.get('data', {})
+
+        itemType = data.get('itemType', 'Unknown type')
+        
+        formatted = {
+            'title': data.get('title', 'Untitled'),
+            'key': data.get('key'),
+            'itemType': itemType,
+            'date': data.get('date', 'No date'),
+        }
+
+        if itemType == 'note':
+            formatted.update(self.format_note(item))
+        else:
+            formatted.update({
+                'authors': self.format_creators(data.get('creators', [])),
+            })
+            if include_abstract:
+                formatted['abstractNote'] = data.get('abstractNote', 'No abstract available')
+        
+        if 'DOI' in data:
+            formatted['doi'] = data['DOI']
+        if 'url' in data:
+            formatted['url'] = data['url']
+        if 'publicationTitle' in data:
+            formatted['publicationTitle'] = data['publicationTitle']
+        if 'tags' in data:
+            formatted['tags'] = [t.get('tag') for t in data.get('tags', []) if t.get('tag')]
+        if 'children' in data:
+            formatted['numAttachements'] = data.get("meta", {}).get("numChildren", 0)
+
+        if 'BBT_key' in item:
+            formatted['bibtexKey'] = item['BBT_key']
+
+        return formatted
+
     def format_creators(self, creators: list[dict[str, str]]) -> str:
         """Format creator names into a string"""
         names = []
@@ -106,37 +146,50 @@ class ZoteroWrapper(zotero.Zotero):
                 names.append(' '.join(name_parts))
         return ', '.join(names) or "No authors listed"
 
-    def format_item(self, item: dict[str, Any], 
-                    include_abstract: bool = True) -> dict[str, Any]:
-        """Format a Zotero item into a standardized dictionary"""
+    def format_note(self, item: dict[str, Any]) -> dict[str, Any]:
         data = item.get('data', {})
-        formatted = {
-            'title': data.get('title', 'Untitled'),
-            'authors': self.format_creators(data.get('creators', [])),
-            'date': data.get('date', 'No date'),
-            'key': data.get('key'),
-            'itemType': data.get('itemType', 'Unknown type'),
-        }
-        
-        if include_abstract:
-            formatted['abstractNote'] = data.get('abstractNote', 'No abstract available')
+        formatted = {}
+
+        formatted['parent'] = data.get("parentItem", "")
+        formatted['last_modified'] = data.get("dateModified", "")
+
+        note_content = data.get("note", "")
+
+        def simple_html_to_md(html):
+            """Convert simple HTML formatting to Markdown
             
-        if 'DOI' in data:
-            formatted['doi'] = data['DOI']
-        if 'url' in data:
-            formatted['url'] = data['url']
-        if 'publicationTitle' in data:
-            formatted['publicationTitle'] = data['publicationTitle']
-        if 'tags' in data:
-            formatted['tags'] = [t.get('tag') for t in data.get('tags', []) if t.get('tag')]
-        if 'children' in data:
-            pass
-        if 'BBT_key' in item:
-            formatted['bibtexKey'] = item['BBT_key']
+            Could be replaced with more advanced code in the future.
+            """
+            # Handle headings
+            for i in range(6, 0, -1):
+                html = html.replace(f"<h{i}>", f"{'#' * i} ").replace(f"</h{i}>", "\n\n")
+            
+            # Handle basic formatting
+            html = html.replace("<strong>", "**").replace("</strong>", "**")
+            html = html.replace("<b>", "**").replace("</b>", "**")
+            html = html.replace("<em>", "*").replace("</em>", "*")
+            html = html.replace("<i>", "*").replace("</i>", "*")
+            
+            # Handle lists
+            html = html.replace("<ul>", "\n").replace("</ul>", "\n")
+            html = html.replace("<ol>", "\n").replace("</ol>", "\n")
+            html = html.replace("<li>", "- ").replace("</li>", "\n")
+            
+            # Handle paragraphs and line breaks
+            html = html.replace("<p>", "").replace("</p>", "\n\n")
+            html = html.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+            
+            # Handle links
+            html = re.sub(r'<a href="([^"]+)"[^>]*>(.*?)</a>', r'[\2](\1)', html)
+            
+            # Remove any remaining HTML tags
+            html = re.sub(r'<[^>]*>', '', html)
+            return html.strip()
 
-
+        formatted['note'] = simple_html_to_md(note_content)
+        
         return formatted
-    
+
     def citation_keys(self, item_keys: list[str]) -> dict[str, str]:
         """
         Fetch citation keys for given item keys using Better BibTeX JSON-RPC API.
@@ -226,7 +279,6 @@ tag supports Boolean searches. E.g. the following examples are possible to limit
 Default choice is empty.
 """
 
-
 @mcp.tool(description="Returns by default information on the Zotero library containing Research Papers collected by the User." \
                       "Good to call if you dont have a clear understanding yet what to ask from this tool. " \
                       "The returned information can be finetuned by asking for summary, collections, recent items, tags.")
@@ -288,7 +340,6 @@ def _get_library_info():
     """
     data['number_of_entries'] = client.count_items()
     return data
-
 
 def _get_groups():
     client = _get_zotero_client()
