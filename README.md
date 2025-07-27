@@ -63,7 +63,7 @@ uv run mcp install zotero.py -v ZOTERO_USER_ID=0
 ## Available Functions
 
 ### Available tools
-- `get_library_metadata()`: Lists properties about your library e.g. collections, recent items or tags.
+- `get_zotero_summary()`: Lists properties about your library including collections, recent items or tags.
 - `get_collection_items(collection_key)`: Get all items in a specific collection
 - `get_items_metadata(item_key)`: Get detailed information about specific paper(s), including abstract.
 - `search_library(query, mode)`: Search your Zotero library, with two possible modes: everything or titleCreatorYear.

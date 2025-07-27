@@ -30,8 +30,9 @@ class ZoteroWrapper(zotero.Zotero):
             super().__init__(1, 'user', '', local=True) #FIXME: Work around a bug #202 in pyzotero.
             self.library_id = user_id
             
-            # Check if Better BibTeX endpoint exists
+            # Check if BetterBibTeX endpoint exists and verify if the library is ready.
             self.BBT = self._check_better_bibtex_endpoint()
+            self._check_bbt_library_ready()
             
         except Exception as e:
             return json.dumps({
@@ -48,7 +49,10 @@ class ZoteroWrapper(zotero.Zotero):
             return False
 
     def _check_bbt_library_ready(self) -> bool:
-        """Check if the Better BibTeX library is ready via JSON-RPC api.ready() call"""
+        """Check if the Better BibTeX library is ready via JSON-RPC api.ready() call
+        
+           Caches the result, because this is just delay after Zotero is started.
+        """
         if not self.BBT:
             return False
             
@@ -148,7 +152,7 @@ class ZoteroWrapper(zotero.Zotero):
             raise Exception("Better BibTeX is not available")
             
         if not self._check_bbt_library_ready():
-            raise Exception("Better BibTeX library is not ready")
+            raise Exception("Better BibTeX library is not ready. Needs some time after starting Zotero.")
             
         if not item_keys:
             return {}
@@ -193,7 +197,6 @@ class ZoteroWrapper(zotero.Zotero):
         )
         return self._build_query(query_string, no_params=True)
 
-
 _zotero_client = None
 def _get_zotero_client() -> ZoteroWrapper:
     global _zotero_client
@@ -201,48 +204,40 @@ def _get_zotero_client() -> ZoteroWrapper:
         _zotero_client = ZoteroWrapper()
     return _zotero_client
 
-@mcp.tool(description="Gets all items in a specific Zotero collection.")
-async def get_collection_items(collection_key: str, 
-                         limit: Optional[int] = None, 
-                         context: Optional[Context] = None) -> str:
-    """
-    Gets all items in a specific Zotero collection
-    
-    Args:
-        collection_key: The collection key/ID
-        limit: Optional how many items to return.
-    """
-    try:
-        client = _get_zotero_client()
-        items = client.collection_items(collection_key, limit=limit)
-        if not items:
-            return json.dumps({
-                "error": "Collection is empty",
-                "collection_key": collection_key,
-                "suggestion": "Add some items to this collection in Zotero"
-            }, indent=2)
-            
-        formatted_items = [client.format_item(item) for item in items]
-        return json.dumps(formatted_items, indent=2)
-    except Exception as e:
-        if context and hasattr(context, '_fastmcp'):
-            await context.error(f"Failed to fetch collection items {collection_key}. Message: {str(e)}")
-        return json.dumps({
-                "error": f"Failed to fetch collection items. Message: {str(e)}",
-                "collection_key": collection_key,
-        }, indent=2)
+# Descriptions for textbased API endpoints.
+_zotero_item_type_desc = """
+itemType supports Boolean searches. E.g. the following examples are possible to limit or choose the item Type.
+ - itemType: book
+ - itemType: book || journalArticle (OR)
+ - itemType: -attachment (NOT)
 
-@mcp.tool(description="Returns organisational metadata about the Zotero library " \
-                      "such as collections, recent items, tags")
-async def get_library_metadata(properties: str = Field(default='collections',
-                                                 description='Properties you are interested in getting. Comma-separated list, containing: ' \
-                                                             'recent, tags, collections'),
-                               limit: Optional[int] = None,
-                               itemType: str = Field(default='-attachment', 
-                                                     description='Define item types to include/exclude,' \
-                                                                 'by default excludes attachments.'),
-                               context: Optional[Context] = None) -> str:
-    """Returns properties of the library such as recent items, tags, collections
+Default choice is to exclude attachements
+"""
+
+_zotero_tag_type_desc = """
+tag supports Boolean searches. E.g. the following examples are possible to limit or choose the item Type.
+ - tag: foo
+ - tag: foo bar (tag with space)
+ - tag: foo&tag=bar (AND)
+ - tag: foo bar || bar (OR)
+ - tag: -foo (NOT)
+ - tag: \\-foo (literal first-character hyphen)
+
+Default choice is empty.
+"""
+
+
+@mcp.tool(description="Returns by default information on the Zotero library containing Research Papers collected by the User." \
+                      "Good to call if you dont have a clear understanding yet what to ask from this tool. " \
+                      "The returned information can be finetuned by asking for summary, collections, recent items, tags.")
+async def get_zotero_information(properties: str = Field(default='summary', # pyright: ignore[reportRedeclaration]
+                                                         description='Properties you are interested in getting. By default returns informational summary on the connected library.' \
+                                                                     'otherwise provide comma-separated list containing: collections, recent, tags'),
+                                 limit: Optional[int] = None,
+                                 itemType: str = Field(default='-attachment', 
+                                                        description=_zotero_item_type_desc),
+                                 context: Optional[Context] = None) -> str:
+    """Returns information of the library such as recent items, tags, or available collections
     
     Args:
         properties: Properties you are interested in getting. Comma-separated list, containing: ' \
@@ -254,12 +249,15 @@ async def get_library_metadata(properties: str = Field(default='collections',
         properties : list[str] = [p.strip() for p in properties.split(',')]
 
         response_data = {}
-        if not properties:
-            return json.dumps({
-                "error": "No properties specified",
-                "suggestion": "Specify at least one property to fetch"
-            }, indent=2)
         
+        if 'summary' in properties:
+            # FIXME This should give a useful summary to setup the tool.
+            response_data['library'] = _get_library_info()
+            response_data['groups'] = _get_groups()
+
+            properties = ['recent', 'collections']
+            limit = 10
+
         if 'recent' in properties:
             response_data['recent'] = _get_recent_items(limit=limit, itemType=itemType)
         if 'tags' in properties:
@@ -269,13 +267,41 @@ async def get_library_metadata(properties: str = Field(default='collections',
         return json.dumps(response_data, indent=2)
     
     except Exception as e:
-        if hasattr(context, '_fastmcp'):
+        if context and hasattr(context, '_fastmcp'):
             await context.error(f"Failed to fetch library metadata for: {properties}. Message: {str(e)}")
         
         return json.dumps({
                 "error": f"Failed to fetch library metadata for: {properties}. Message: {str(e)}",
                 "properties": properties,
         }, indent=2)
+
+def _get_library_info():
+    client = _get_zotero_client()
+    data: dict[str, Any] = {}
+    data['info'] = \
+    """ This is a primary Zotero library through the locally running Zotero library. 
+    
+    Additionally the user can have access to further groups that behave like new libraries. 
+    Currently those can not be queried through this tool.
+
+    The recent and collections that are provided are limited to 10 items each, to give you a feeling what you can request.
+    """
+    data['number_of_entries'] = client.count_items()
+    return data
+
+
+def _get_groups():
+    client = _get_zotero_client()
+    groups: list[dict[str, Any]] = client.groups() # pyright: ignore[reportAssignmentType]
+    data: dict[int, dict] = {}
+
+    for group in groups:
+        id = group['id']
+        data[id] = {}
+        data[id]['name']  = group['data']['name']
+        data[id]['number_of_entries'] = group['meta']['numItems']
+
+    return data
 
 def _get_recent_items(limit: Optional[int] = Field(default=10), 
                       itemType: str = Field(default='-attachment', 
@@ -311,21 +337,24 @@ def _get_recent_items(limit: Optional[int] = Field(default=10),
                 "suggestion": "Please provide a valid number for limit"
                }
     
-def _get_tags(limit: Optional[int] = None) -> list[dict[str, Any]] | dict[str, str]:
+def _get_tags(query: Optional[str] = None, 
+              qmode: Optional[Literal["contains"] | Literal["startsWith"]] = Field(default=None, 
+                                                                                   description='Searching tags that contain query (`contains`), or start with query (`startsWith`)'),
+              limit: Optional[int] = None) -> list[dict[str, Any]] | dict[str, str]:
     """Return tags used in the Zotero library.
 
         Args:
         limit: Optionally limit how many tags to return.
     """
     client = _get_zotero_client()
-    items = client.tags(limit=limit)
+    items = client.tags(limit=limit, sort='dateModified')
     if not items:
         return {
                 "error": "No tags found",
                 "suggestion": "You need to create tags in your library"
                }
     
-    return items
+    return items # pyright: ignore[reportReturnType]
 
 def _get_collections(limit: Optional[int] = None,) -> str:
     """Get all collections in the Zotero library
@@ -334,9 +363,40 @@ def _get_collections(limit: Optional[int] = None,) -> str:
         limit: Optional how many items to return.
     """
     client = _get_zotero_client()
-    collections = client.collections(limit=limit)
+    collections = client.collections(limit=limit, sort='dateModified')
 
     return collections
+
+@mcp.tool(description="Gets all items in a specific Zotero collection.")
+async def get_collection_items(collection_key: str, 
+                         limit: Optional[int] = None, 
+                         context: Optional[Context] = None) -> str:
+    """
+    Gets all items in a specific Zotero collection
+    
+    Args:
+        collection_key: The collection key/ID
+        limit: Optional how many items to return.
+    """
+    try:
+        client = _get_zotero_client()
+        items: list = client.collection_items(collection_key, limit=limit) # type: ignore
+        if not items:
+            return json.dumps({
+                "error": "Collection is empty",
+                "collection_key": collection_key,
+                "suggestion": "Add some items to this collection in Zotero"
+            }, indent=2)
+            
+        formatted_items = [client.format_item(item) for item in items]
+        return json.dumps(formatted_items, indent=2)
+    except Exception as e:
+        if context and hasattr(context, '_fastmcp'):
+            await context.error(f"Failed to fetch collection items {collection_key}. Message: {str(e)}")
+        return json.dumps({
+                "error": f"Failed to fetch collection items. Message: {str(e)}",
+                "collection_key": collection_key,
+        }, indent=2)
 
 @mcp.tool(description="Get detailed information on specific item(s) in the library")
 async def get_items_metadata(item_key: Annotated[str, Field(description='Item key(s) to retrieve. Multiple keys are separated by comma.')],
@@ -506,12 +566,16 @@ async def get_item_pdf(item_key: str,
                 "error": f"Failed to fetch PDF. {str(e)}",
                 "item_key": item_key,
         }, indent=2)
-    
+
 @mcp.tool(description="Search the Zotero library for an item.")
 async def search_library(query: str, 
                          qmode: Literal["everything"] | Literal["titleCreatorYear"] = Field(default='titleCreatorYear', 
-                                                                                            description='Use all field and full text search (`everything`), or only Title, Creator and Year search (`titleCreatorYear`)') ,
-                         itemType: str = '-attachment',
+                                                                                            description='Use all field and full text search (`everything`), or only Title, Creator and Year search (`titleCreatorYear`)'),
+                         itemType: str = Field(default='-attachment', 
+                                               description=_zotero_item_type_desc),
+                         tag: Optional[str] = Field(default=None, 
+                                          description=_zotero_tag_type_desc),
+                         include_abstract: bool = Field(default=False, description='Should search results include the abstract?'),
                          limit: Optional[int] = None,
                          context: Optional[Context] = None) -> str:
     """
@@ -530,7 +594,10 @@ async def search_library(query: str,
         
     try:
         client = _get_zotero_client()
-        items = client.items(q=query, qmode=qmode, itemType=itemType, limit=limit)
+        optional_args = {'tag': tag,
+                         'limit': limit}
+        items = client.items(q=query, qmode=qmode, itemType=itemType, 
+                             **{key: value for key, value in optional_args.items() if value is not None})
         if len(items) < 1:
             return json.dumps({
                 "error": "No results found",
@@ -538,7 +605,7 @@ async def search_library(query: str,
                 "suggestion": "Try a different search term or verify your library contains matching items"
             }, indent=2)
             
-        formatted_items = [client.format_item(item, include_abstract=False) for item in items]
+        formatted_items = [client.format_item(item, include_abstract=include_abstract) for item in items]
         return json.dumps(formatted_items, indent=2)
     except Exception as e:
         if context and hasattr(context, '_fastmcp'):
