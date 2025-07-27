@@ -1,6 +1,6 @@
 [project]
 name = "mcp-pyzotero"
-version = "0.1.0"
+version = "0.1.2"
 description = "A Model Control Protocol (MCP) connector for integrating your local Zotero with Claude"
 readme = "README.md"
 authors = [
@@ -8,8 +8,9 @@ authors = [
 ]
 requires-python = ">= 3.10"
 dependencies = [
-    "mcp[cli]>=1.6.0",
-    "pyzotero>=1.6.10",
+    "mcp[cli] >= 1.12.2",
+    "pyzotero >= 1.6.11",
+    "httpx"
 ]
 classifiers = [
 "Development Status :: 3 - Alpha",

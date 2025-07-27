@@ -9,6 +9,7 @@ This builds on the shoulders of the fantastic [pyzotero](https://github.com/ursc
 
 ## Installation
 
+### Run from local code
 Information about Claude Desktop interacting with MCPs can be found [here](https://modelcontextprotocol.io/quickstart/user).
 
 1. Use `uv`. Installation instructions can be found [here](https://docs.astral.sh/uv/getting-started/installation/).
@@ -28,6 +29,26 @@ uv sync
 uv run mcp install zotero.py
 ```
 
+### Run encapsulated with uvx
+Edit the configuration for your Claude Desktop softare in the file.
+
+    - macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
+    - Windows: %APPDATA%\Claude\claude_desktop_config.json
+
+and add the Zotero entry
+{
+    "mcpServers": {
+        "Zotero": {
+            "command": "uvx",
+            "args": ["--from", "git+https://github.com/gyger/mcp-pyzotero.git", 
+                     "--with", "mcp[cli]",
+                     "--with", "pyzotero",
+                     "mcp", "run", "zotero.py"
+                    ],
+        }
+    }
+}
+
 ## Configuration
 
 The connector is configured to work with local Zotero installations and currently only `user` libraries are supported. 
@@ -39,21 +60,20 @@ uv run mcp install zotero.py -v ZOTERO_USER_ID=0
 
 ## Available Functions
 
-The connector provides the following functions:
-
-- `get_collections()`: List all collections in your Zotero library
+### Available tools
+- `get_library_metadata()`: Lists properties about your library e.g. collections, recent items or tags.
 - `get_collection_items(collection_key)`: Get all items in a specific collection
-- `get_item_details(item_key)`: Get detailed information about a specific paper, including abstract
-- `search_library(query)`: Search your entire Zotero library
-- `get_recent(limit=10)`: Get recently added papers to your library
+- `get_items_metadata(item_key)`: Get detailed information about specific paper(s), including abstract.
+- `search_library(query, mode)`: Search your Zotero library, with two possible modes: everything or titleCreatorYear.
 
 This functionality should be extended in the future.
 
 ## Requirements
 
 - Python 3.10+
+  - pyzotero
+  - mcp[cli]
 - Local Zotero installation
-- Claude Desktop
 
 ## Contributing
 
