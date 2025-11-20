@@ -1,5 +1,11 @@
 # Zotero MCP Connector
 
+> [!IMPORTANT]  
+> This project is retired. I am no longer convinced MCP is the interface one wants, better have direct CLI access.
+> If you like MCPs, there are a few options, but I did not test them.
+> - [zotero-mcp](https://github.com/54yyyu/zotero-mcp)
+> - [mcp-zotero](https://github.com/kaliaboi/mcp-zotero)
+
 A Model Control Protocol (MCP) connector for integrating your local Zotero with Claude.  
 This enables direct read access to your local Zotero library through Claude's Desktop interface.
 It depends on the ability to access a local web-api in Zotero 7.
