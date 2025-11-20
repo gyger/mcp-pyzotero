@@ -4,6 +4,7 @@
 > This project is retired. I am no longer convinced MCP is the interface one wants, better have direct CLI access.
 > If you like MCPs, there are a few options, but I did not test them.
 > - [zotero-mcp](https://github.com/54yyyu/zotero-mcp)
+> - [zotero-mcp-server](https://github.com/swairshah/zotero-mcp-server)
 > - [mcp-zotero](https://github.com/kaliaboi/mcp-zotero)
 
 A Model Control Protocol (MCP) connector for integrating your local Zotero with Claude.  
